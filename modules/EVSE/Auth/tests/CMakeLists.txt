@@ -8,7 +8,7 @@ set(TEST_SOURCES ${MODULE_DIR}/lib/ReservationHandler.cpp
                  ${MODULE_DIR}/lib/Connector.cpp
                  ${MODULE_DIR}/lib/ConnectorStateMachine.cpp)
 
-add_executable(${TEST_TARGET_NAME} auth_tests.cpp reservation_tests.cpp ${TEST_SOURCES})
+add_executable(${TEST_TARGET_NAME} auth_tests.cpp reservation_tests.cpp auth_security_tests.cpp ${TEST_SOURCES})
 
 message("Current source dir: ${CMAKE_CURRENT_SOURCE_DIR}")
 
