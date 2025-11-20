@@ -323,7 +323,7 @@ TEST_F(AuthSecurityTest, test_path_traversal_protection) {
     std::vector<int32_t> connectors{1};
     ProvidedIdToken path_token = create_security_token(MALICIOUS_TOKEN_PATH, connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(1));
 
     const auto result = this->auth_handler->on_token(path_token);
@@ -345,7 +345,7 @@ TEST_F(AuthSecurityTest, test_buffer_overflow_protection) {
     std::vector<int32_t> connectors{1};
     ProvidedIdToken large_token = create_security_token(LARGE_TOKEN, connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(1));
 
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -657,7 +657,7 @@ TEST_F(AuthSecurityTest, test_session_timeout_security) {
     std::vector<int32_t> connectors{1, 2};
     ProvidedIdToken test_token = create_security_token(VALID_SECURITY_TOKEN, connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(3));
 
     // Start token processing but don't plug in
@@ -743,7 +743,7 @@ TEST_F(AuthSecurityTest, test_withdrawal_attack_protection) {
     std::vector<int32_t> connectors{1};
     ProvidedIdToken victim_token = create_security_token("SECURITY_VALID_VICTIM", connectors);
 
-    EXPECT_CALL(mock_publish_token_validation_status_callback, testing::_, testing::_)
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
         .Times(AtLeast(1));
     EXPECT_CALL(mock_withdraw_authorization_callback, testing::_)
         .Times(AtMost(1)); // Should only allow legitimate withdrawals
