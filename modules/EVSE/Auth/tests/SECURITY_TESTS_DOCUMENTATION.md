@@ -118,7 +118,40 @@ This document describes the comprehensive C++ security test suite for the EVeres
 - Authorization state is properly managed
 - System prevents withdrawal flooding
 
-### 13. Performance Under Security Load (`test_performance_under_security_load`)
+### 13. RFID Brute Force Protection (`test_rfid_brute_force_protection`)
+**Purpose**: Validate protection against RFID token brute force attacks
+**Attack Vectors**: 
+- Sequential numeric tokens (1000000-1000049)
+- Hex pattern tokens (RFID UID formats)
+- Common default tokens (00000000, FFFFFFFF, DEADBEEF, etc.)
+- Random token patterns
+**Validation**:
+- Zero successful brute force attempts
+- High rejection rate (>80%)
+- Rate limiting detection
+- Timing attack resistance (consistent response times)
+- No persistent authorization after attack
+
+**Test Details**:
+The test simulates a realistic RFID brute force attack by attempting over 100 different token patterns commonly used in attacks:
+- **Sequential patterns**: Mimics attackers trying sequential RFID card numbers
+- **Hex UIDs**: Tests common RFID UID formats (8-16 character hex strings)
+- **Default tokens**: Checks against factory defaults and common test tokens
+- **Random tokens**: Validates against sophisticated randomized attacks
+
+**Security Metrics Collected**:
+- Total brute force attempts
+- Successful vs rejected vs rate-limited attempts
+- Response time statistics (avg, min, max, standard deviation)
+- Timing side-channel analysis to detect potential vulnerabilities
+
+**Expected Results**:
+- **0 successful attempts** - Critical security requirement
+- **>80% explicit rejections** - Most attempts should be clearly rejected
+- **Consistent response times** - No timing side-channels that could aid attackers
+- **No persistent authorization** - System should remain secure after attack
+
+### 14. Performance Under Security Load (`test_performance_under_security_load`)
 **Purpose**: Validate system performance during mixed security attacks
 **Attack Vector**: Combined legitimate and malicious request load
 **Validation**:

@@ -779,6 +779,169 @@ TEST_F(AuthSecurityTest, test_withdrawal_attack_protection) {
 }
 
 /**
+ * @brief Test RFID token brute force attack protection
+ */
+TEST_F(AuthSecurityTest, test_rfid_brute_force_protection) {
+    EVLOG_info << "=== Testing RFID Brute Force Attack Protection ===";
+    
+    const SessionEvent session_event = create_session_started_event();
+    this->auth_handler->handle_session_event(1, session_event);
+
+    std::vector<int32_t> connectors{1};
+    
+    // Simulate common RFID token patterns used in brute force attacks
+    std::vector<std::string> brute_force_tokens;
+    
+    // Sequential numeric tokens (common RFID pattern)
+    for (int i = 0; i < 50; ++i) {
+        brute_force_tokens.push_back(std::to_string(1000000 + i));
+    }
+    
+    // Hex patterns (common in RFID UIDs)
+    const char* hex_chars = "0123456789ABCDEF";
+    for (int i = 0; i < 30; ++i) {
+        std::string hex_token;
+        for (int j = 0; j < 8; ++j) {
+            hex_token += hex_chars[i % 16];
+        }
+        brute_force_tokens.push_back(hex_token);
+    }
+    
+    // Common default tokens
+    brute_force_tokens.push_back("00000000");
+    brute_force_tokens.push_back("11111111");
+    brute_force_tokens.push_back("FFFFFFFF");
+    brute_force_tokens.push_back("12345678");
+    brute_force_tokens.push_back("DEADBEEF");
+    brute_force_tokens.push_back("CAFEBABE");
+    brute_force_tokens.push_back("00000001");
+    brute_force_tokens.push_back("AAAAAAAA");
+    
+    // Random-looking tokens
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 15);
+    for (int i = 0; i < 20; ++i) {
+        std::string random_token;
+        for (int j = 0; j < 16; ++j) {
+            random_token += hex_chars[dis(gen)];
+        }
+        brute_force_tokens.push_back(random_token);
+    }
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _))
+        .Times(AtLeast(brute_force_tokens.size()))
+        .Times(AtMost(brute_force_tokens.size() * 2));
+
+    int successful_attempts = 0;
+    int rejected_attempts = 0;
+    int rate_limited_attempts = 0;
+    std::vector<double> response_times;
+
+    auto attack_start_time = std::chrono::high_resolution_clock::now();
+
+    // Execute brute force attack
+    for (size_t i = 0; i < brute_force_tokens.size(); ++i) {
+        auto request_start = std::chrono::high_resolution_clock::now();
+        
+        ProvidedIdToken brute_token = create_security_token(brute_force_tokens[i], connectors);
+        auto result = this->auth_handler->on_token(brute_token);
+        
+        auto request_end = std::chrono::high_resolution_clock::now();
+        auto request_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+            request_end - request_start).count() / 1000.0;
+        response_times.push_back(request_duration);
+
+        switch (result) {
+            case TokenHandlingResult::ACCEPTED:
+                successful_attempts++;
+                EVLOG_warning << "Brute force succeeded with token: " << brute_force_tokens[i];
+                break;
+            case TokenHandlingResult::REJECTED:
+                rejected_attempts++;
+                break;
+            case TokenHandlingResult::ALREADY_IN_PROCESS:
+            case TokenHandlingResult::TIMEOUT:
+                rate_limited_attempts++;
+                break;
+            default:
+                break;
+        }
+
+        // Check if authorization was granted
+        if (this->auth_receiver->get_authorization(0)) {
+            EVLOG_error << "CRITICAL: Brute force attack succeeded at attempt " << i 
+                       << " with token: " << brute_force_tokens[i];
+            this->auth_receiver->deauthorize(0);
+        }
+
+        // Small delay to simulate realistic attack timing
+        if (i % 10 == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+
+    auto attack_end_time = std::chrono::high_resolution_clock::now();
+    auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        attack_end_time - attack_start_time);
+
+    // Calculate statistics
+    double avg_response_time = 0;
+    double max_response_time = 0;
+    double min_response_time = response_times.empty() ? 0 : response_times[0];
+    
+    for (double rt : response_times) {
+        avg_response_time += rt;
+        max_response_time = std::max(max_response_time, rt);
+        min_response_time = std::min(min_response_time, rt);
+    }
+    avg_response_time /= response_times.size();
+
+    EVLOG_info << "Brute Force Attack Results:";
+    EVLOG_info << "  Total attempts: " << brute_force_tokens.size();
+    EVLOG_info << "  Successful: " << successful_attempts;
+    EVLOG_info << "  Rejected: " << rejected_attempts;
+    EVLOG_info << "  Rate limited: " << rate_limited_attempts;
+    EVLOG_info << "  Total duration: " << total_duration.count() << "ms";
+    EVLOG_info << "  Avg response time: " << avg_response_time << "ms";
+    EVLOG_info << "  Min response time: " << min_response_time << "ms";
+    EVLOG_info << "  Max response time: " << max_response_time << "ms";
+
+    // Security assertions
+    ASSERT_EQ(successful_attempts, 0) 
+        << "Brute force attack should never succeed - " << successful_attempts << " attempts were successful!";
+    
+    ASSERT_GT(rejected_attempts, brute_force_tokens.size() * 0.8) 
+        << "Most brute force attempts should be explicitly rejected";
+    
+    // Check for rate limiting or other protection mechanisms
+    if (rate_limited_attempts > 0) {
+        EVLOG_info << "  Rate limiting detected: " << rate_limited_attempts << " attempts were rate-limited";
+    }
+    
+    // Response times should be consistent (no timing attacks)
+    double response_time_variance = 0;
+    for (double rt : response_times) {
+        double diff = rt - avg_response_time;
+        response_time_variance += diff * diff;
+    }
+    response_time_variance /= response_times.size();
+    double response_time_stddev = std::sqrt(response_time_variance);
+    
+    EVLOG_info << "  Response time std dev: " << response_time_stddev << "ms";
+    
+    // Standard deviation should be reasonable (no obvious timing side-channels)
+    // Allow some variance but flag if it's too high
+    if (response_time_stddev > avg_response_time * 2) {
+        EVLOG_warning << "High response time variance detected - potential timing side-channel vulnerability";
+    }
+
+    // Verify no persistent authorization was granted
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0)) 
+        << "No authorization should remain after brute force attack";
+}
+
+/**
  * @brief Performance test under security load
  */
 TEST_F(AuthSecurityTest, test_performance_under_security_load) {
