@@ -41,3 +41,30 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 ev_register_test_target(${TEST_TARGET_NAME})
+
+# Security tests target
+set(SECURITY_TEST_TARGET_NAME ${PROJECT_NAME}_auth_security_tests)
+
+add_executable(${SECURITY_TEST_TARGET_NAME} auth_security_tests.cpp ${TEST_SOURCES})
+
+target_include_directories(${SECURITY_TEST_TARGET_NAME} PUBLIC
+    ${INCLUDE_DIR}
+    ${GENERATED_INCLUDE_DIR}
+)
+
+target_link_libraries(${SECURITY_TEST_TARGET_NAME} PRIVATE
+    GTest::gmock
+    GTest::gtest_main
+    everest::timer
+    ${CMAKE_DL_LIBS}
+    everest::log
+    everest::framework
+    everest::helpers
+    pthread
+    nlohmann_json::nlohmann_json
+    date::date
+    date::date-tz
+    )
+
+add_test(${SECURITY_TEST_TARGET_NAME} ${SECURITY_TEST_TARGET_NAME})
+ev_register_test_target(${SECURITY_TEST_TARGET_NAME})
