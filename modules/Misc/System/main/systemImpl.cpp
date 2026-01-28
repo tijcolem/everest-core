@@ -236,11 +236,13 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
 
     // // create temporary file
     const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
+    EVLOG_info << "creating date_time string: " << date_time;
     const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "signed_firmware-" + date_time);
-
+    EVLOG_info << "created tmp file: " << firmware_file_path.string();
     const auto firmware_downloader = this->scripts_path / SIGNED_FIRMWARE_DOWNLOADER;
     const auto constants = this->scripts_path / CONSTANTS;
 
+    EVLOG_info << "entering download args: ";
     const std::vector<std::string> download_args = {
         constants.string(), firmware_update_request.location, firmware_file_path.string(),
         firmware_update_request.signature.value(), firmware_update_request.signing_certificate.value()};
