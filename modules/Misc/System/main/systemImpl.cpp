@@ -231,6 +231,7 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
 
     std::lock_guard<std::mutex> lg(this->firmware_update_mutex);
     EVLOG_info << "Starting Firmware update";
+    EVLOG_info << "Starting Firmware update is it compiled?";
     this->interrupt_firmware_download.exchange(false);
     this->firmware_download_running = true;
 
