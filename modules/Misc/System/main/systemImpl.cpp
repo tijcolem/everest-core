@@ -64,6 +64,17 @@ void systemImpl::standard_firmware_update(const types::system::FirmwareUpdateReq
 
     this->standard_firmware_update_running = true;
     EVLOG_info << "Starting firmware update";
+    
+    if (firmware_update_request.location.empty()) {
+        EVLOG_error << "Firmware update ignored, location is missing.";
+        types::system::FirmwareUpdateStatus firmware_status;
+        firmware_status.request_id = -1;
+        firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::DownloadFailed;
+        publish_firmware_update_status(firmware_status);
+        this->standard_firmware_update_running = false;
+        return;
+    }
+    
     // create temporary file
     const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
 
@@ -72,6 +83,7 @@ void systemImpl::standard_firmware_update(const types::system::FirmwareUpdateReq
     if (firmware_file_path.empty()) {
         EVLOG_error << "Firmware update ignored, cannot write temporary file.";
         publish_firmware_update_status({types::system::FirmwareUpdateStatusEnum::DownloadFailed});
+        this->standard_firmware_update_running = false;
         return;
     }
 
@@ -188,6 +200,12 @@ systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequ
 
 void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateRequest& firmware_update_request) {
 
+    if (firmware_update_request.location.empty()) {
+        EVLOG_warning << "Location is missing in FirmwareUpdateRequest";
+        this->publish_firmware_update_status(
+            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
+        return;
+    }
     if (!firmware_update_request.signing_certificate.has_value()) {
         EVLOG_warning << "Signing certificate is missing in FirmwareUpdateRequest";
         this->publish_firmware_update_status(
