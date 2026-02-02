@@ -189,11 +189,11 @@ systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequ
 
 
 void systemImpl::download_unsigned_firmware(const types::system::FirmwareUpdateRequest& firmware_update_request) {
-    EVLOG_info << "Starting unsigned firmware download";
+    EVLOG_info << "Starting firmware download";
 
     // create temporary file
     const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
-    const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "unsigned_firmware-" + date_time);
+    const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "signed_firmware-" + date_time);
 
     if (firmware_file_path.empty()) {
         EVLOG_info << "Firmware download ignored, cannot write temporary file.";
@@ -247,7 +247,7 @@ void systemImpl::download_unsigned_firmware(const types::system::FirmwareUpdateR
     EVLOG_info << "Firmware update thread finished";
 
 
-    EVLOG_info << "Unsigned firmware download finished with status: " << firmware_status.firmware_update_status;
+    EVLOG_info << "Signed firmware download finished with status: " << firmware_status.firmware_update_status;
 }
 
 
@@ -385,7 +385,13 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
         this->firmware_installation_running = true;
         const auto firmware_installer = this->scripts_path / SIGNED_FIRMWARE_INSTALLER;
         const auto constants = this->scripts_path / CONSTANTS;
-        const std::vector<std::string> install_args = {constants.string()};
+
+        const std::string destination_path = "/ext/dist/libexec/everest/modules/YetiSimulator/YetiSimulator";
+
+        const std::vector<std::string> install_args = {constants.string(), firmware_file_path.string(),
+                                                      destination_path};
+        EVLOG_info << "Starting signed firmware installation from path: " << firmware_file_path;
+        EVLOG_info << "Install args: " << firmware_installer.string();
         run_application(firmware_installer.string(), install_args,
                         [this, &firmware_status](const std::string& output_line) {
                             firmware_status.firmware_update_status =
