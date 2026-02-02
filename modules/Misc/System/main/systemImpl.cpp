@@ -146,36 +146,37 @@ systemImpl::handle_standard_firmware_update(const types::system::FirmwareUpdateR
 types::system::UpdateFirmwareResponse
 systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequest& firmware_update_request) {
 
-    if (!firmware_update_request.signing_certificate.has_value()) {
-        EVLOG_warning << "Signing certificate is missing in FirmwareUpdateRequest";
-        return types::system::UpdateFirmwareResponse::Rejected;
-    }
-    if (!firmware_update_request.signature.has_value()) {
-        EVLOG_warning << "Signature is missing in FirmwareUpdateRequest";
-        return types::system::UpdateFirmwareResponse::Rejected;
-    }
+    EVLOG_info << "Tim 1 Executing signed firmware update download callback";
+// if (!firmware_update_request.signing_certificate.has_value()) {
+//       EVLOG_warning << "Signing certificate is missing in FirmwareUpdateRequest";
+//       return types::system::UpdateFirmwareResponse::Rejected;
+//   }
+//   if (!firmware_update_request.signature.has_value()) {
+//       EVLOG_warning << "Signature is missing in FirmwareUpdateRequest";
+//       return types::system::UpdateFirmwareResponse::Rejected;
+//   }
 
     EVLOG_info << "Executing signed firmware update download callback";
 
-    if (firmware_update_request.retrieve_timestamp.has_value() &&
-        Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value()) > date::utc_clock::now()) {
-        const auto retrieve_timestamp = Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value());
-        this->signed_firmware_update_download_timer.at(
-            [this, retrieve_timestamp, firmware_update_request]() {
-                this->download_signed_firmware(firmware_update_request);
-            },
-            retrieve_timestamp);
-        EVLOG_info << "Download for firmware scheduled for: " << Everest::Date::to_rfc3339(retrieve_timestamp);
-        types::system::FirmwareUpdateStatus firmware_update_status;
-        firmware_update_status.request_id = firmware_update_request.request_id;
-        firmware_update_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::DownloadScheduled;
-        this->publish_firmware_update_status(firmware_update_status);
-    } else {
+//   if (firmware_update_request.retrieve_timestamp.has_value() &&
+//       Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value()) > date::utc_clock::now()) {
+//       const auto retrieve_timestamp = Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value());
+//       this->signed_firmware_update_download_timer.at(
+//           [this, retrieve_timestamp, firmware_update_request]() {
+//               this->download_signed_firmware(firmware_update_request);
+//           },
+//           retrieve_timestamp);
+//       EVLOG_info << "Download for firmware scheduled for: " << Everest::Date::to_rfc3339(retrieve_timestamp);
+//       types::system::FirmwareUpdateStatus firmware_update_status;
+//       firmware_update_status.request_id = firmware_update_request.request_id;
+//       firmware_update_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::DownloadScheduled;
+//       this->publish_firmware_update_status(firmware_update_status);
+//   } else {
         // start download immediately
         this->update_firmware_thread =
-            std::thread([this, firmware_update_request]() { this->download_signed_firmware(firmware_update_request); });
+            std::thread([this, firmware_update_request]() { this->download_unsigned_firmware(firmware_update_request); });
         this->update_firmware_thread.detach();
-    }
+//   }
 
     if (this->firmware_download_running) {
         return types::system::UpdateFirmwareResponse::AcceptedCanceled;
@@ -186,20 +187,85 @@ systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequ
     }
 }
 
+
+void systemImpl::download_unsigned_firmware(const types::system::FirmwareUpdateRequest& firmware_update_request) {
+    EVLOG_info << "Starting unsigned firmware download";
+
+    // create temporary file
+    const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
+    const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "unsigned_firmware-" + date_time);
+
+    if (firmware_file_path.empty()) {
+        EVLOG_info << "Firmware download ignored, cannot write temporary file.";
+        publish_firmware_update_status(
+            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
+        return;
+    }
+
+    const auto constants = this->scripts_path / CONSTANTS;
+    const std::vector<std::string> download_args = {
+        constants.string(), firmware_update_request.location, firmware_file_path.string()};
+
+    int32_t retries = 0;
+    const auto total_retries = firmware_update_request.retries.value_or(this->mod->config.DefaultRetries);
+    const auto retry_interval =
+        firmware_update_request.retry_interval_s.value_or(this->mod->config.DefaultRetryInterval);
+
+    auto firmware_status_enum = types::system::FirmwareUpdateStatusEnum::DownloadFailed;
+    types::system::FirmwareUpdateStatus firmware_status;
+    firmware_status.request_id = firmware_update_request.request_id;
+    firmware_status.firmware_update_status = firmware_status_enum;
+
+    while (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
+           retries < total_retries) {
+        retries += 1;
+        // Use a simple download script (without signing verification)
+        const auto firmware_downloader = this->scripts_path / SIGNED_FIRMWARE_DOWNLOADER;
+        run_application(
+            firmware_downloader.string(), download_args, [this, &firmware_status](const std::string& output_line) {
+                firmware_status.firmware_update_status =
+                    types::system::string_to_firmware_update_status_enum(output_line);
+                this->publish_firmware_update_status(firmware_status);
+                return CmdControl::Continue;
+            });
+
+        if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
+            retries < total_retries) {
+            std::this_thread::sleep_for(std::chrono::seconds(retry_interval));
+        }
+    }
+    if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+        this->initialize_firmware_installation(firmware_update_request, firmware_file_path);
+    }
+    this->update_firmware_thread = std::thread([this, firmware_update_request, firmware_file_path]() {
+           this->install_signed_firmware(firmware_update_request, firmware_file_path);
+    });
+    this->update_firmware_thread.detach();
+
+    this->firmware_download_running = false;
+    this->firmware_update_cv.notify_one();
+    EVLOG_info << "Firmware update thread finished";
+
+
+    EVLOG_info << "Unsigned firmware download finished with status: " << firmware_status.firmware_update_status;
+}
+
+
 void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateRequest& firmware_update_request) {
 
-    if (!firmware_update_request.signing_certificate.has_value()) {
-        EVLOG_warning << "Signing certificate is missing in FirmwareUpdateRequest";
-        this->publish_firmware_update_status(
-            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
-        return;
-    }
-    if (!firmware_update_request.signature.has_value()) {
-        EVLOG_warning << "Signature is missing in FirmwareUpdateRequest";
-        this->publish_firmware_update_status(
-            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
-        return;
-    }
+    EVLOG_info << "Tim 2 Executing signed firmware update download callback";
+//    if (!firmware_update_request.signing_certificate.has_value()) {
+//        EVLOG_warning << "Signing certificate is missing in FirmwareUpdateRequest";
+//        this->publish_firmware_update_status(
+//            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
+//        return;
+//    }
+//    if (!firmware_update_request.signature.has_value()) {
+//        EVLOG_warning << "Signature is missing in FirmwareUpdateRequest";
+//        this->publish_firmware_update_status(
+//            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
+//        return;
+//    }
 
     if (this->firmware_download_running) {
         EVLOG_info
@@ -217,16 +283,34 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
     this->firmware_download_running = true;
 
     // // create temporary file
+    EVLOG_info << "Create Temp Firmware update";
     const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
-    const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "signed_firmware-" + date_time);
+    const auto firmware_file_path = fs::path("/tmp/firmware-" + date_time);
+   // const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "signed_firmware-" + date_time);
+    EVLOG_info << "Firmware will be downloaded to temporary file: " << firmware_file_path;
+
+    EVLOG_info << "Tempfile Firmware update";
+
+    if (firmware_file_path.empty()) {
+        EVLOG_info << "Firmware update ignored, cannot write temporary file.";
+        publish_firmware_update_status(
+            {types::system::FirmwareUpdateStatusEnum::DownloadFailed, firmware_update_request.request_id});
+        this->firmware_download_running = false;
+        return;
+    }
+    EVLOG_info << "Tempfile Firmware update 2";
 
     const auto firmware_downloader = this->scripts_path / SIGNED_FIRMWARE_DOWNLOADER;
     const auto constants = this->scripts_path / CONSTANTS;
+    EVLOG_info << "Tempfile Firmware update 3";
+
+    
 
     const std::vector<std::string> download_args = {
         constants.string(), firmware_update_request.location, firmware_file_path.string(),
         firmware_update_request.signature.value(), firmware_update_request.signing_certificate.value()};
     int32_t retries = 0;
+    EVLOG_info << "Tempfile Firmware update 4";
     const auto total_retries = firmware_update_request.retries.value_or(this->mod->config.DefaultRetries);
     const auto retry_interval =
         firmware_update_request.retry_interval_s.value_or(this->mod->config.DefaultRetryInterval);
@@ -236,8 +320,10 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
     firmware_status.request_id = firmware_update_request.request_id;
     firmware_status.firmware_update_status = firmware_status_enum;
 
+    EVLOG_info << "Tempfile Firmware update 4";
     while (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
            retries < total_retries && !this->interrupt_firmware_download) {
+        EVLOG_info << "Trying to to download";
         run_application(
             firmware_downloader.string(), download_args, [this, &firmware_status](const std::string& output_line) {
                 firmware_status.firmware_update_status =
@@ -315,7 +401,9 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
 
             auto reset_type = types::system::ResetType::Hard;
             bool firmware_installation_running_copy = this->firmware_installation_running;
-            this->handle_reset(reset_type, firmware_installation_running_copy);
+            EVLOG_info << "install_signed_firmware installed to: " << firmware_file_path;
+            EVLOG_info << "resseting system"; 
+	    this->handle_reset(reset_type, firmware_installation_running_copy);
         }
     } else {
         firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallationFailed;

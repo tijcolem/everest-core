@@ -128,6 +128,16 @@ private:
      * @param firmware_update_request
      * @param firmware_file_path
      */
+
+    void download_unsigned_firmware(const types::system::FirmwareUpdateRequest& firmware_update_request);
+
+    /**
+     * @brief Initializes the firmware installation by starting it immediately or if specified in the \p
+     * firmware_update_request it schedules it for the future.
+     *
+     * @param firmware_update_request
+     * @param firmware_file_path
+     */
     void initialize_firmware_installation(const types::system::FirmwareUpdateRequest& firmware_update_request,
                                           const std::filesystem::path& firmware_file_path);
 
